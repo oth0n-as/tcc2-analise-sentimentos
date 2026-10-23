@@ -1,0 +1,5 @@
+Condição,Erros,Total,Taxa de erro
+Limpeza Básica,168,1000,0.168
+Pipeline Completo,252,1000,0.252
+Sem Emoticons,157,1000,0.157
+Texto Bruto,3,1000,0.003

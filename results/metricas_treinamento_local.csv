@@ -1,0 +1,9 @@
+Modelo,Condição,F1 Macro,Accuracy,Tempo (s),Arquivo
+Regressão Logística,Texto Bruto,0.833378,0.834468,5.97,lr_texto_bruto.joblib
+Regressão Logística,Limpeza Básica,0.828477,0.829524,6.01,lr_limpeza_basica.joblib
+Regressão Logística,Pipeline Completo,0.802492,0.803643,6.06,lr_pipeline_completo.joblib
+Regressão Logística,Sem Emoticons,0.833625,0.834721,6.33,lr_sem_emoticons.joblib
+SVM,Texto Bruto,0.830272,0.831189,6.96,svm_texto_bruto.joblib
+SVM,Limpeza Básica,0.822279,0.823218,5.82,svm_limpeza_basica.joblib
+SVM,Pipeline Completo,0.794862,0.796428,4.93,svm_pipeline_completo.joblib
+SVM,Sem Emoticons,0.830447,0.831391,7.07,svm_sem_emoticons.joblib

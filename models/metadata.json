@@ -1,0 +1,79 @@
+{
+  "data_treinamento": "2026-10-23 15:04:52",
+  "seed": 42,
+  "split_treino": 79281,
+  "split_teste": 19821,
+  "classes": {
+    "0": "Negativo",
+    "1": "Positivo",
+    "2": "Neutro"
+  },
+  "condicoes": [
+    "Texto Bruto",
+    "Limpeza Básica",
+    "Pipeline Completo",
+    "Sem Emoticons"
+  ],
+  "modelos": {
+    "Regressão Logística": {
+      "Texto Bruto": {
+        "modelo": "Regressão Logística",
+        "condicao": "Texto Bruto",
+        "f1_macro": 0.833378,
+        "accuracy": 0.834468,
+        "tempo_segundos": 5.97
+      },
+      "Limpeza Básica": {
+        "modelo": "Regressão Logística",
+        "condicao": "Limpeza Básica",
+        "f1_macro": 0.828477,
+        "accuracy": 0.829524,
+        "tempo_segundos": 6.01
+      },
+      "Pipeline Completo": {
+        "modelo": "Regressão Logística",
+        "condicao": "Pipeline Completo",
+        "f1_macro": 0.802492,
+        "accuracy": 0.803643,
+        "tempo_segundos": 6.06
+      },
+      "Sem Emoticons": {
+        "modelo": "Regressão Logística",
+        "condicao": "Sem Emoticons",
+        "f1_macro": 0.833625,
+        "accuracy": 0.834721,
+        "tempo_segundos": 6.33
+      }
+    },
+    "SVM": {
+      "Texto Bruto": {
+        "modelo": "SVM",
+        "condicao": "Texto Bruto",
+        "f1_macro": 0.830272,
+        "accuracy": 0.831189,
+        "tempo_segundos": 6.96
+      },
+      "Limpeza Básica": {
+        "modelo": "SVM",
+        "condicao": "Limpeza Básica",
+        "f1_macro": 0.822279,
+        "accuracy": 0.823218,
+        "tempo_segundos": 5.82
+      },
+      "Pipeline Completo": {
+        "modelo": "SVM",
+        "condicao": "Pipeline Completo",
+        "f1_macro": 0.794862,
+        "accuracy": 0.796428,
+        "tempo_segundos": 4.93
+      },
+      "Sem Emoticons": {
+        "modelo": "SVM",
+        "condicao": "Sem Emoticons",
+        "f1_macro": 0.830447,
+        "accuracy": 0.831391,
+        "tempo_segundos": 7.07
+      }
+    }
+  }
+}

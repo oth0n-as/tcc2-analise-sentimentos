@@ -107,8 +107,32 @@ def classificar_texto(
     # Aplica o pré-processamento estrito da condição
     texto_processado = preprocessar_por_condicao(texto, condicao)
 
-    # Caso o pré-processamento remova todos os caracteres (ex: texto composto apenas por emoticons na condição 'Sem Emoticons')
-    entrada_modelo = texto_processado if texto_processado.strip() else ""
+    # Caso o pré-processamento remova todos os caracteres (ex: texto composto apenas por emoticons na condição 'Sem Emoticons' ou apenas stopwords no 'Pipeline Completo')
+    if not texto_processado or not texto_processado.strip():
+        return {
+            "sucesso": True,
+            "texto_vazio": True,
+            "erro": None,
+            "texto_original": texto,
+            "texto_processado": "",
+            "condicao": condicao,
+            "modelo": nome_modelo,
+            "classe_id": None,
+            "classe_predita": "Indeterminado",
+            "probabilidades": {},
+            "diagnostico": {
+                "tokens_reconhecidos": [],
+                "tokens_fora_vocabulario": [],
+                "pesos_features": [],
+                "aviso": (
+                    f"O texto ficou vazio após a aplicação do pré-processamento da condição '{condicao}' "
+                    "(todos os elementos foram filtrados pelas regras). "
+                    "Nenhum token restou para alimentar o vetor TF-IDF."
+                ),
+            },
+        }
+
+    entrada_modelo = texto_processado
 
     try:
         pred_enc = int(pipeline.predict([entrada_modelo])[0])
@@ -122,18 +146,24 @@ def classificar_texto(
                 nome_classe = CLASS_ID_TO_LABEL.get(idx, f"Classe {idx}")
                 probabilidades[nome_classe] = float(prob)
 
-        # Diagnóstico da representação textual (Tokens no TF-IDF e OOV)
+        # Diagnóstico da representação textual (Tokens no TF-IDF, OOV e Contribuição Efetiva)
         diagnostico = {
             "tokens_reconhecidos": [],
             "tokens_fora_vocabulario": [],
             "pesos_features": [],
+            "aviso": None,
         }
 
         if "tfidf" in pipeline.named_steps:
             tfidf = pipeline.named_steps["tfidf"]
+            clf = pipeline.named_steps.get("clf")
+            vocab = tfidf.vocabulary_
+
+            # Vetorização real do texto de entrada para capturar pesos TF-IDF efetivos
+            X_tfidf = tfidf.transform([entrada_modelo])
+
             analyzer = tfidf.build_analyzer()
             tokens_extraidos = analyzer(entrada_modelo)
-            vocab = tfidf.vocabulary_
 
             reconhecidos = []
             fora_vocab = []
@@ -148,19 +178,47 @@ def classificar_texto(
             diagnostico["tokens_reconhecidos"] = reconhecidos
             diagnostico["tokens_fora_vocabulario"] = fora_vocab
 
-            clf = pipeline.named_steps.get("clf")
+            if not reconhecidos:
+                diagnostico["aviso"] = (
+                    "Nenhum termo gerado pela tokenização foi encontrado no vocabulário de treino (Out-of-Vocabulary). "
+                    "A predição foi baseada exclusivamente no viés (intercept) a priori do modelo."
+                )
+
+            # Contribuição efetiva: TF-IDF(termo) * Coeficiente(classe, termo)
             if clf is not None and hasattr(clf, "coef_"):
                 for t in reconhecidos:
                     col_idx = vocab[t]
-                    peso_pred = float(clf.coef_[pred_enc, col_idx])
+                    tfidf_val = float(X_tfidf[0, col_idx])
+                    coef = float(clf.coef_[pred_enc, col_idx])
+                    contribuicao = tfidf_val * coef
+                    tipo_token = "Unigrama" if len(t.split()) == 1 else "Bigrama"
+
+                    if contribuicao > 0.0001:
+                        influencia = "Favorece a classe prevista"
+                    elif contribuicao < -0.0001:
+                        influencia = "Penaliza a classe prevista"
+                    else:
+                        influencia = "Impacto neutro / residual"
+
                     diagnostico["pesos_features"].append({
                         "token": t,
-                        "peso": round(peso_pred, 4),
-                        "influencia": "Favorece a classe" if peso_pred > 0 else "Penaliza a classe",
+                        "tipo": tipo_token,
+                        "tfidf": round(tfidf_val, 4),
+                        "coeficiente": round(coef, 4),
+                        "peso": round(contribuicao, 4),  # Mantido para compatibilidade retroativa
+                        "contribuicao": round(contribuicao, 4),
+                        "influencia": influencia,
                     })
+
+                # Ordena os termos pela magnitude absoluta da contribuição efetiva na decisão
+                diagnostico["pesos_features"].sort(
+                    key=lambda item: abs(item["contribuicao"]),
+                    reverse=True,
+                )
 
         return {
             "sucesso": True,
+            "texto_vazio": False,
             "texto_original": texto,
             "texto_processado": texto_processado,
             "condicao": condicao,
@@ -173,6 +231,7 @@ def classificar_texto(
     except Exception as e:
         return {
             "sucesso": False,
+            "texto_vazio": False,
             "erro": f"Erro durante a inferência: {str(e)}",
             "texto_original": texto,
             "texto_processado": texto_processado,
@@ -193,19 +252,26 @@ def comparar_todas_as_condicoes(
     """
     resultados_condicoes = []
     classes_preditas = []
+    condicoes_validas = []
 
     for condicao in CONDICOES:
         res = classificar_texto(texto, condicao, nome_modelo=nome_modelo)
         resultados_condicoes.append(res)
-        if res.get("sucesso"):
+        if res.get("sucesso") and not res.get("texto_vazio"):
             classes_preditas.append(res["classe_predita"])
+            condicoes_validas.append(condicao)
 
-    divergencia = len(set(classes_preditas)) > 1
+    # Divergência detectada apenas se houver mais de uma classe distinta entre as condições com texto válido
+    classes_unicas = set(classes_preditas)
+    divergencia = len(classes_unicas) > 1
 
     return {
         "texto_original": texto,
         "modelo": nome_modelo,
         "resultados": resultados_condicoes,
         "classes_preditas": classes_preditas,
+        "condicoes_validas": condicoes_validas,
         "divergencia_detectada": divergencia,
+        "total_validas": len(classes_preditas),
+        "total_condicoes": len(CONDICOES),
     }

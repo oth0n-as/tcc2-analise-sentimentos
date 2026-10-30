@@ -8,8 +8,9 @@ diagnóstico didático da representação vetorial e comparação interativa ent
 quatro condições experimentais da pesquisa.
 """
 
-from pathlib import Path
+import html
 import json
+from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -420,10 +421,22 @@ def carregar_modelo_cached(nome_modelo: str, condicao: str):
 
 @st.cache_data
 def carregar_resultados_consolidados():
-    """Carrega os resultados experimentais consolidados do TCC."""
-    caminho = RESULTS_DIR / "resultados_recuperados_TCC2" / "resultados_gerais_recuperados_provisorios.csv"
-    if caminho.exists():
-        return pd.read_csv(caminho)
+    """Carrega os resultados experimentais consolidados oficiais do TCC II."""
+    caminho_definitivo = RESULTS_DIR / "resultados_recuperados_TCC2" / "resultados_gerais_definitivos_tcc2.csv"
+    if caminho_definitivo.exists():
+        return pd.read_csv(caminho_definitivo)
+    caminho_provisorio = RESULTS_DIR / "resultados_recuperados_TCC2" / "resultados_gerais_recuperados_provisorios.csv"
+    if caminho_provisorio.exists():
+        return pd.read_csv(caminho_provisorio)
+    local_path = RESULTS_DIR / "metricas_treinamento_local.csv"
+    if local_path.exists():
+        return pd.read_csv(local_path)
+    return None
+
+
+@st.cache_data
+def carregar_metricas_locais():
+    """Carrega as métricas locais de treinamento dos modelos do protótipo interativo."""
     local_path = RESULTS_DIR / "metricas_treinamento_local.csv"
     if local_path.exists():
         return pd.read_csv(local_path)
@@ -496,7 +509,7 @@ def render_sidebar():
                 f"""
                 <div class="metric-card" style="padding: 12px 14px; margin-bottom: 8px;">
                     <div style="font-size: 0.84rem; color: #A9A5BC; font-weight: 500; margin-bottom: 4px;">
-                        Modelos disponíveis
+                        Configurações disponíveis
                     </div>
                     <div style="display: flex; align-items: center; justify-content: space-between;">
                         <span style="font-size: 1.2rem; font-weight: 700; color: #F5F3FF;">
@@ -504,8 +517,11 @@ def render_sidebar():
                         </span>
                         <span style="display: inline-flex; align-items: center; gap: 5px; font-size: 0.8rem; color: #34D399; font-weight: 600; background: rgba(16, 185, 129, 0.12); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(16, 185, 129, 0.25);">
                             <span style="display: inline-block; width: 6px; height: 6px; background-color: #10B981; border-radius: 50%;"></span>
-                            Prontos
+                            Prontas
                         </span>
+                    </div>
+                    <div style="font-size: 0.75rem; color: #7E7A94; margin-top: 4px;">
+                        2 classificadores × 4 condições
                     </div>
                 </div>
                 """,
@@ -531,7 +547,9 @@ def get_sentiment_badge_html(classe: str) -> str:
         return '<span class="badge-negativo">Negativo</span>'
     elif classe_clean == "Neutro":
         return '<span class="badge-neutro">Neutro</span>'
-    return f"<span>{classe}</span>"
+    elif classe_clean == "Indeterminado":
+        return '<span class="badge-neutro" style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3);">Indeterminado</span>'
+    return f"<span>{html.escape(classe)}</span>"
 
 
 # ============================================================
@@ -607,6 +625,13 @@ def pagina_analise_individual(modelo_escolhido: str):
         col_res1, col_res2 = st.columns([1.2, 1.8])
 
         with col_res1:
+            texto_orig_escaped = html.escape(resultado.get('texto_original', ''))
+            texto_proc_val = resultado.get('texto_processado', '')
+            texto_proc_escaped = html.escape(texto_proc_val) if texto_proc_val else ''
+            modelo_escaped = html.escape(resultado.get('modelo', ''))
+            condicao_escaped = html.escape(resultado.get('condicao', ''))
+            classe_predita_val = resultado.get('classe_predita', 'Indeterminado')
+
             st.markdown(
                 f"""
                 <div class="metric-card">
@@ -614,16 +639,29 @@ def pagina_analise_individual(modelo_escolhido: str):
                         Sentimento Previsto
                     </div>
                     <div>
-                        {get_sentiment_badge_html(resultado['classe_predita'])}
+                        {get_sentiment_badge_html(classe_predita_val)}
                     </div>
                     <div style="margin-top: 14px; font-size: 0.9rem; color: #A9A5BC; line-height: 1.5;">
-                        <b style="color: #F5F3FF;">Modelo:</b> {resultado['modelo']}<br>
-                        <b style="color: #F5F3FF;">Condição:</b> {resultado['condicao']}
+                        <b style="color: #F5F3FF;">Modelo:</b> {modelo_escaped}<br>
+                        <b style="color: #F5F3FF;">Condição:</b> {condicao_escaped}
                     </div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
+
+            # Caso o texto tenha ficado vazio após o pré-processamento
+            if resultado.get("texto_vazio"):
+                st.markdown(
+                    """
+                    <div class="convergence-alert" style="border-left: 4px solid #F59E0B; background: rgba(245, 158, 11, 0.08); margin-top: 10px;">
+                        <b style="color: #FBBF24;">Atenção: Texto Vazio após Pré-processamento</b><br>
+                        Todos os termos da entrada foram filtrados pelas regras da condição selecionada (ex.: remoção de stopwords ou emoticons).
+                        Nenhum token restou para alimentar o modelo estatístico.
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
             # Probabilidades estimadas se disponíveis
             if resultado.get("probabilidades"):
@@ -661,18 +699,18 @@ def pagina_analise_individual(modelo_escolhido: str):
                 f"""
                 <div style="margin-bottom: 12px; margin-top: 6px;">
                     <span style="font-size: 0.82rem; color: #A9A5BC; font-weight: 700; letter-spacing: 0.05em;">TEXTO ORIGINAL (ENTRADA LIVRE):</span>
-                    <div class="text-box">{resultado['texto_original']}</div>
+                    <div class="text-box">{texto_orig_escaped}</div>
                 </div>
                 <div>
-                    <span style="font-size: 0.82rem; color: #A9A5BC; font-weight: 700; letter-spacing: 0.05em;">TEXTO APÓS PRÉ-PROCESSAMENTO ({resultado['condicao'].upper()}):</span>
-                    <div class="text-box">{resultado['texto_processado'] if resultado['texto_processado'] else '<i style="color: #A9A5BC;">[Texto vazio após a remoção de elementos]</i>'}</div>
+                    <span style="font-size: 0.82rem; color: #A9A5BC; font-weight: 700; letter-spacing: 0.05em;">TEXTO APÓS PRÉ-PROCESSAMENTO ({condicao_escaped.upper()}):</span>
+                    <div class="text-box">{texto_proc_escaped if texto_proc_escaped else '<i style="color: #A9A5BC;">[Texto vazio após a remoção de elementos]</i>'}</div>
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
 
-            diff_chars = len(resultado['texto_original']) - len(resultado['texto_processado'])
-            st.caption(f"Variação de caracteres: {len(resultado['texto_original'])} → {len(resultado['texto_processado'])} ({diff_chars} caracteres removidos ou transformados).")
+            diff_chars = len(resultado.get('texto_original', '')) - len(resultado.get('texto_processado', ''))
+            st.caption(f"Variação de caracteres: {len(resultado.get('texto_original', ''))} → {len(resultado.get('texto_processado', ''))} ({diff_chars} caracteres removidos ou transformados).")
 
         # ------------------------------------------------------------
         # ÁREA EXPANSÍVEL: ENTENDA ESTA PREVISÃO
@@ -684,11 +722,16 @@ def pagina_analise_individual(modelo_escolhido: str):
                     """
                     <div style="font-size: 0.92rem; color: #A9A5BC; margin-bottom: 12px; line-height: 1.55;">
                         Este painel apresenta um <b>diagnóstico objetivo da representação vetorial (TF-IDF)</b>,
-                        mostrando quais termos da frase foram capturados pelo vocabulário de treino e quais foram ignorados.
+                        mostrando quais termos da frase foram capturados pelo vocabulário de treino, seus valores TF-IDF no texto,
+                        e a contribuição efetiva para a pontuação da classe prevista.
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
+
+                if diagnostico.get("aviso"):
+                    st.info(diagnostico["aviso"])
+
                 col_d1, col_d2 = st.columns(2)
                 with col_d1:
                     st.markdown("**Tokens reconhecidos pelo modelo (no vocabulário):**")
@@ -696,7 +739,7 @@ def pagina_analise_individual(modelo_escolhido: str):
                     if rec:
                         st.markdown(
                             " ".join([
-                                f"<code style='background: #242235; color: #34D399; padding: 4px 8px; border-radius: 4px; font-size: 0.9rem; margin: 2px;'>{t}</code>"
+                                f"<code style='background: #242235; color: #34D399; padding: 4px 8px; border-radius: 4px; font-size: 0.9rem; margin: 2px;'>{html.escape(t)}</code>"
                                 for t in rec
                             ]),
                             unsafe_allow_html=True,
@@ -710,7 +753,7 @@ def pagina_analise_individual(modelo_escolhido: str):
                     if oov:
                         st.markdown(
                             " ".join([
-                                f"<code style='background: #242235; color: #FB7185; padding: 4px 8px; border-radius: 4px; font-size: 0.9rem; margin: 2px;'>{t}</code>"
+                                f"<code style='background: #242235; color: #FB7185; padding: 4px 8px; border-radius: 4px; font-size: 0.9rem; margin: 2px;'>{html.escape(t)}</code>"
                                 for t in oov
                             ]),
                             unsafe_allow_html=True,
@@ -721,23 +764,39 @@ def pagina_analise_individual(modelo_escolhido: str):
                 pesos = diagnostico.get("pesos_features", [])
                 if pesos:
                     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-                    st.markdown(f"**Impacto dos termos reconhecidos para a classe prevista (*{resultado['classe_predita']}*):**")
+                    st.markdown(f"**Contribuição efetiva dos termos para a classe prevista (*{html.escape(classe_predita_val)}*):**")
                     df_pesos = pd.DataFrame(pesos)
-                    df_pesos.rename(
-                        columns={
-                            "token": "Termo",
-                            "peso": "Coeficiente Linear",
-                            "influencia": "Impacto na Decisão",
-                        },
-                        inplace=True,
+                    colunas_map = {
+                        "token": "Termo / N-grama",
+                        "tipo": "Tipo",
+                        "tfidf": "Valor TF-IDF",
+                        "coeficiente": "Coeficiente (W)",
+                        "contribuicao": "Contribuição Efetiva (TF-IDF × W)",
+                        "influencia": "Impacto na Decisão",
+                    }
+                    cols_presentes = [c for c in colunas_map.keys() if c in df_pesos.columns]
+                    df_pesos_view = df_pesos[cols_presentes].rename(columns=colunas_map)
+
+                    format_dict = {}
+                    if "Valor TF-IDF" in df_pesos_view.columns:
+                        format_dict["Valor TF-IDF"] = "{:.4f}"
+                    if "Coeficiente (W)" in df_pesos_view.columns:
+                        format_dict["Coeficiente (W)"] = "{:.4f}"
+                    if "Contribuição Efetiva (TF-IDF × W)" in df_pesos_view.columns:
+                        format_dict["Contribuição Efetiva (TF-IDF × W)"] = "{:+.4f}"
+
+                    st.dataframe(
+                        df_pesos_view.style.format(format_dict),
+                        use_container_width=True,
+                        hide_index=True,
                     )
-                    st.dataframe(df_pesos, use_container_width=True, hide_index=True)
 
                 st.markdown(
                     """
                     <div style="background-color: #171426; border-left: 3px solid #8B5CF6; padding: 10px 14px; border-radius: 6px; font-size: 0.86rem; color: #A9A5BC; margin-top: 12px; line-height: 1.5;">
-                        <b>Ressalva Metodológica:</b> Trata-se de um diagnóstico da representação vetorial e dos pesos numéricos aprendidos pelo classificador estatístico,
-                        não constituindo uma explicação causal psicológica ou emocional completa da linguagem humana.
+                        <b>Nota Científica sobre a Contribuição Efetiva:</b> Em modelos lineares com TF-IDF, a contribuição real de uma característica
+                        para o score da classe é calculada pela multiplicação do peso TF-IDF do termo na entrada pelo seu coeficiente linear (<i>Contribuição = TF-IDF × W</i>).
+                        Coeficientes positivos elevam a probabilidade da classe; termos não presentes no texto têm TF-IDF zero e, portanto, não contribuem para a decisão.
                     </div>
                     """,
                     unsafe_allow_html=True,
@@ -830,32 +889,57 @@ def pagina_comparar_condicoes(modelo_escolhido: str):
         st.markdown("---")
 
         # Alertas sóbrios sem emojis
-        if comparacao["divergencia_detectada"]:
+        n_validas = len(comparacao.get("classes_preditas", []))
+
+        if n_validas < 2:
             st.markdown(
-                """
+                f"""
+                <div class="convergence-alert" style="border-left: 4px solid #F59E0B; background: rgba(245, 158, 11, 0.08);">
+                    <b>Comparação inconclusiva (número insuficiente de previsões válidas)</b><br>
+                    Apenas {n_validas} de 4 condições produziu previsão válida (as demais condições não produziram previsões válidas, seja por termos esvaziados no pré-processamento ou por falha na inferência).
+                    Não há previsões válidas suficientes para atestar concordância ou divergência entre representações.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+        elif comparacao["divergencia_detectada"]:
+            st.markdown(
+                f"""
                 <div class="divergence-alert">
-                    <b>Divergência de classificação detectada</b><br>
+                    <b>Divergência de classificação detectada ({n_validas} condições válidas avaliadas)</b><br>
                     O modelo alterou a previsão de sentimento dependendo da técnica de pré-processamento textual aplicada.
-                    Isso evidencia experimentalmente a sensibilidade do classificador à remoção de marcadores linguísticos e emoticons,
+                    Isso evidencia experimentalmente a sensibilidade do classificador à remoção de marcadores linguísticos,
                     sem determinar que uma representação seja universalmente superior.
                 </div>
                 """,
                 unsafe_allow_html=True,
             )
         else:
-            primeira_classe = comparacao["classes_preditas"][0] if comparacao["classes_preditas"] else ""
-            st.markdown(
-                f"""
-                <div class="convergence-alert">
-                    <b>Convergência entre as quatro condições ({primeira_classe})</b><br>
-                    O modelo manteve a mesma previsão de sentimento sob todas as representações testadas.
-                    Isso reflete estabilidade em relação aos termos residuais para esta frase,
-                    <b>embora não garanta, isoladamente, que a previsão seja semanticamente correta</b>
-                    (especialmente em mensagens com ironia, ambiguidade ou termos raros).
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            primeira_classe = html.escape(comparacao["classes_preditas"][0]) if comparacao["classes_preditas"] else ""
+            if n_validas == 4:
+                st.markdown(
+                    f"""
+                    <div class="convergence-alert">
+                        <b>Convergência entre as quatro condições ({primeira_classe})</b><br>
+                        O modelo manteve a mesma previsão de sentimento sob todas as quatro representações testadas.
+                        Isso reflete estabilidade em relação aos termos residuais para esta frase,
+                        <b>embora não garanta, isoladamente, que a previsão seja semanticamente correta</b>
+                        (especialmente em mensagens com ironia, ambiguidade ou termos raros).
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+            else:
+                st.markdown(
+                    f"""
+                    <div class="convergence-alert" style="border-left: 4px solid #8B5CF6;">
+                        <b>Concordância parcial entre as condições avaliadas ({primeira_classe})</b><br>
+                        O modelo manteve a mesma previsão de sentimento nas {n_validas} condições avaliadas com sucesso.
+                        As demais condições não produziram previsões válidas.
+                    </div>
+                    """,
+                    unsafe_allow_html=True,
+                )
 
         # Tabela Comparativa
         st.markdown("#### Tabela Comparativa de Pré-processamento e Sentimento")
@@ -863,13 +947,31 @@ def pagina_comparar_condicoes(modelo_escolhido: str):
         dados_tabela = []
         resumo_classes = []
         for r in comparacao["resultados"]:
-            if r.get("sucesso"):
-                resumo_classes.append((r["condicao"], r["classe_predita"]))
+            cond = r.get("condicao", "Desconhecida")
+            if not r.get("sucesso"):
                 dados_tabela.append({
-                    "Condição Experimental": r["condicao"],
-                    "Texto Processado": r["texto_processado"] if r["texto_processado"] else "(vazio)",
-                    "Sentimento Previsto": r["classe_predita"],
-                    "Confiança": f"{r['probabilidades'].get(r['classe_predita'], 0)*100:.1f}%" if r.get("probabilidades") else "N/A",
+                    "Condição Experimental": cond,
+                    "Texto Processado": "(erro na inferência)",
+                    "Sentimento Previsto": "Erro",
+                    "Confiança": "N/A",
+                })
+            elif r.get("texto_vazio"):
+                dados_tabela.append({
+                    "Condição Experimental": cond,
+                    "Texto Processado": "(vazio após filtros)",
+                    "Sentimento Previsto": "Indeterminado",
+                    "Confiança": "N/A",
+                })
+            else:
+                classe_p = r.get("classe_predita", "Indeterminado")
+                resumo_classes.append((cond, classe_p))
+                probs = r.get("probabilidades") or {}
+                conf_str = f"{probs.get(classe_p, 0)*100:.1f}%" if probs and classe_p in probs else "N/A"
+                dados_tabela.append({
+                    "Condição Experimental": cond,
+                    "Texto Processado": r.get("texto_processado", ""),
+                    "Sentimento Previsto": classe_p,
+                    "Confiança": conf_str,
                 })
 
         df_comp = pd.DataFrame(dados_tabela)
@@ -881,38 +983,64 @@ def pagina_comparar_condicoes(modelo_escolhido: str):
 
         for i, r in enumerate(comparacao["resultados"]):
             with cols[i]:
+                cond_escaped = html.escape(r.get('condicao', ''))
+                txt_proc = r.get('texto_processado', '')
+                txt_proc_escaped = html.escape(txt_proc) if txt_proc else ''
+
+                if not r.get("sucesso"):
+                    badge_html = '<span class="badge-neutro" style="background: rgba(239, 68, 68, 0.2); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.4);">Erro</span>'
+                    erro_msg = html.escape(r.get("erro", "Falha na inferência"))
+                    status_content = f'<div class="text-box" style="font-size: 0.85rem; min-height: 70px; color: #F87171;">{erro_msg}</div>'
+                elif r.get("texto_vazio"):
+                    badge_html = '<span class="badge-neutro" style="background: rgba(148, 163, 184, 0.15); color: #CBD5E1; border: 1px solid rgba(148, 163, 184, 0.3);">Indeterminado</span>'
+                    status_content = '<div class="text-box" style="font-size: 0.85rem; min-height: 70px; color: #A9A5BC;"><i>[Texto vazio após a remoção de elementos]</i></div>'
+                else:
+                    badge_html = get_sentiment_badge_html(r.get('classe_predita', ''))
+                    status_content = f'<div class="text-box" style="font-size: 0.85rem; min-height: 70px;">{txt_proc_escaped if txt_proc_escaped else "<span style=\'color:#A9A5BC;\'>[vazio]</span>"}</div>'
+
                 st.markdown(
                     f"""
                     <div class="metric-card" style="min-height: 235px;">
                         <div style="font-size: 0.9rem; font-weight: 700; color: #8B5CF6; margin-bottom: 6px;">
-                            {r['condicao']}
+                            {cond_escaped}
                         </div>
                         <div style="margin-bottom: 12px;">
-                            {get_sentiment_badge_html(r['classe_predita'])}
+                            {badge_html}
                         </div>
                         <div style="font-size: 0.8rem; color: #A9A5BC; margin-bottom: 4px; font-weight: 700; letter-spacing: 0.04em;">
                             TEXTO APÓS PIPELINE:
                         </div>
-                        <div class="text-box" style="font-size: 0.85rem; min-height: 70px;">{r['texto_processado'] if r['texto_processado'] else '<span style=\"color:#A9A5BC;\">[vazio]</span>'}</div>
+                        {status_content}
                     </div>
                     """,
                     unsafe_allow_html=True,
                 )
 
         # Demonstração guiada sem emojis
-        if comparacao["divergencia_detectada"]:
-            detalhe_resumo = " · ".join([f"{c}: <b>{p}</b>" for c, p in resumo_classes])
+        if n_validas < 2:
             texto_interpretacao = (
-                f"Nesta demonstração, a classificação variou entre as representações ({detalhe_resumo}). "
+                f"A sentença fornecida produziu menos de duas previsões válidas ({n_validas} de 4). "
+                "Portanto, a comparação entre representações é inconclusiva para esta entrada específica."
+            )
+        elif comparacao["divergencia_detectada"]:
+            detalhe_resumo = " · ".join([f"{html.escape(c)}: <b>{html.escape(p)}</b>" for c, p in resumo_classes])
+            texto_interpretacao = (
+                f"Nesta demonstração, a classificação variou entre as representações com texto válido ({detalhe_resumo}). "
                 "Isso evidencia empiricamente a sensibilidade do modelo à perda de elementos textuais "
                 "(como marcadores expressivos ou desinências gramaticais), demonstrando que o pré-processamento "
                 "altera a representação matemática do texto, sem determinar, isoladamente, qual previsão é a mais correta."
             )
-        else:
-            classe_unica = resumo_classes[0][1] if resumo_classes else "prevista"
+        elif n_validas < 4:
+            classe_unica = resumo_classes[0][1] if resumo_classes else "Indeterminada"
             texto_interpretacao = (
-                f"Para esta sentença, todas as quatro representações textuais convergiram na classe <b>{classe_unica}</b>. "
-                "Isso indica que as palavras-chave determinantes para a decisão foram mantidas ao longo dos filtros, "
+                f"Para esta sentença, as {n_validas} representações avaliadas com sucesso concordaram na classe <b>{html.escape(classe_unica)}</b>. "
+                "As demais condições não produziram previsões válidas."
+            )
+        else:
+            classe_unica = resumo_classes[0][1] if resumo_classes else "Indeterminada"
+            texto_interpretacao = (
+                f"Para esta sentença, todas as quatro representações textuais convergiram na classe <b>{html.escape(classe_unica)}</b>. "
+                "Isso indica que os termos determinantes para a decisão foram mantidos ao longo dos filtros, "
                 "demonstrando estabilidade nesta construção sintática específica."
             )
 
@@ -928,9 +1056,10 @@ def pagina_comparar_condicoes(modelo_escolhido: str):
                 <hr style="border-color: #2D2A42; margin: 12px 0;">
                 <div style="font-size: 0.86rem; color: #A9A5BC; line-height: 1.55;">
                     <b>Guia de Leitura Metodológica:</b><br>
-                    • <b>Texto Bruto vs. Sem Emoticons:</b> Permite isolar o papel de emoticons como <code>:)</code> e <code>:(</code> como gatilhos primários de sentimento.<br>
-                    • <b>Limpeza Básica:</b> Filtra ruídos externos (links, menções, caracteres repetidos) preservando o léxico e a morfologia das palavras.<br>
-                    • <b>Pipeline Completo:</b> Elimina stopwords e reduz palavras ao radical (stemming). Nos experimentos do TCC, essa remoção frequente de pistas causou perda de desempenho médio nos classificadores.
+                    • <b>Texto Bruto vs. Sem Emoticons:</b> Avalia a sensibilidade à remoção dos marcadores emocionais explícitos (<code>:)</code>, <code>:(</code>, etc.).<br>
+                    &nbsp;&nbsp;<i>Nota metodológica crucial:</i> Tanto nos modelos lineares com <code>TfidfVectorizer</code> quanto na rede <b>LSTM</b> (que utilizou o <code>Tokenizer</code> padrão do Keras com filtros de pontuação padrão), os símbolos de pontuação e emoticons são descartados por padrão na etapa de tokenização, não formando tokens isolados. Portanto, variações nesses modelos decorrem de ajustes contextuais no vocabulário e na convergência de treinamento, e não da presença literal de tokens de emoticons. Em contraste, no <b>BERTimbau</b> (cujo tokenizer WordPiece fragmenta e processa esses caracteres dentro de seu espaço representacional pré-treinado), a remoção de emoticons produziu um salto drástico na taxa de erro (de 0,3% para 15,7%), fornecendo indícios de dependência de marcadores associados à coleta por <i>distant supervision</i>.<br>
+                    • <b>Limpeza Básica:</b> Filtra ruídos externos (links, menções, repetições excessivas) preservando o léxico e a morfologia das palavras.<br>
+                    • <b>Pipeline Completo:</b> Elimina stopwords e reduz palavras ao radical (stemming). Em todos os quatro modelos da pesquisa, essa remoção agressiva causou perda consistente de desempenho médio.
                 </div>
             </div>
             """,
@@ -946,8 +1075,9 @@ def pagina_resultados_experimentais():
     st.markdown(
         """
         <div style="color: #A9A5BC; font-size: 0.95rem; margin-bottom: 16px; line-height: 1.5;">
-            Métricas oficiais obtidas a partir da execução do notebook original de experimentos,
-            cobrindo as 16 combinações avaliadas na pesquisa (4 modelos × 4 condições).
+            Esta seção reúne as métricas científicas consolidadas na pesquisa e no artigo do TCC II,
+            cobrindo as 16 combinações avaliadas no notebook definitivo (4 modelos × 4 condições),
+            além de apresentar separadamente as métricas dos modelos empacotados para esta demonstração interativa.
         </div>
         """,
         unsafe_allow_html=True,
@@ -971,29 +1101,12 @@ def pagina_resultados_experimentais():
                 o <b>Pipeline Completo</b> (remoção de stopwords e stemming) apresentou desempenho substancialmente inferior
                 ao <b>Texto Bruto</b>.
                 A redução das palavras aos seus radicais e a eliminação de termos frequentes removeram pistas morfológicas e afetivas vitais,
-                comprovando que técnicas agressivas de pré-processamento prejudicam a classificação de sentimentos em textos informais em português.
+                evidenciando empiricamente que técnicas agressivas de pré-processamento tendem a prejudicar a classificação de sentimentos em textos informais em português.
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-
-    # Nota metodológica
-    st.markdown(
-        """
-        <div class="metric-card" style="border-left: 4px solid #8B5CF6; margin-bottom: 20px;">
-            <b style="color: #F5F3FF; font-size: 0.92rem;">Nota Metodológica sobre o Escopo Experimental:</b>
-            <div style="color: #A9A5BC; font-size: 0.9rem; line-height: 1.5; margin-top: 4px;">
-                Os classificadores de Regressão Logística, SVM e a rede neural LSTM foram treinados com 79.281 exemplos e avaliados em 19.821 tweets de teste (split 80/20).
-                O <b>BERTimbau</b> foi avaliado em uma amostra de teste de 1.000 exemplos devido ao custo computacional da arquitetura transformer na GPU.
-            </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    # Gráfico comparativo de F1-Macro
-    st.markdown("### Comparativo de F1-Score Macro entre Modelos e Condições")
 
     cores_condicoes = {
         "Texto Bruto": "#8B5CF6",       # Roxo principal
@@ -1002,105 +1115,248 @@ def pagina_resultados_experimentais():
         "Pipeline Completo": "#EF4444", # Vermelho
     }
 
-    fig = px.bar(
-        df_geral,
-        x="Modelo",
-        y="F1 Macro",
-        color="Condição",
-        barmode="group",
-        color_discrete_map=cores_condicoes,
-        title="Desempenho por Modelo e Condição Experimental (F1-Macro)",
-        text=df_geral["F1 Macro"].apply(lambda v: f"{v:.3f}"),
-    )
+    # Estruturação em Abas para Máxima Clareza Acadêmica
+    tab_oficial, tab_delta, tab_local = st.tabs([
+        "Resultados Definitivos do TCC II (16 Experimentos)",
+        "Variação do Desempenho (Δ F1 vs. Texto Bruto)",
+        "Métricas do Protótipo Local (Modelos Demonstrativos)",
+    ])
 
-    fig.update_layout(
-        height=450,
-        paper_bgcolor="#171426",
-        plot_bgcolor="#171426",
-        font=dict(color="#F5F3FF", size=13),
-        title=dict(font=dict(size=16, color="#F5F3FF")),
-        legend=dict(
-            orientation="h",
-            yanchor="bottom",
-            y=1.02,
-            xanchor="right",
-            x=1,
-            font=dict(color="#A9A5BC", size=13),
-        ),
-        yaxis=dict(range=[0.7, 1.03], gridcolor="#2D2A42", tickfont=dict(color="#A9A5BC", size=12)),
-        xaxis=dict(gridcolor="#2D2A42", tickfont=dict(color="#F5F3FF", size=13)),
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # Tabela consolidada com filtros
-    st.markdown("### Tabela Completa das 16 Combinações Experimentais")
-
-    col_filtro_mod, col_filtro_cond = st.columns(2)
-    with col_filtro_mod:
-        modelos_unicos = df_geral["Modelo"].unique().tolist()
-        mod_sel = st.multiselect("Filtrar por modelo:", modelos_unicos, default=modelos_unicos)
-    with col_filtro_cond:
-        cond_unicas = df_geral["Condição"].unique().tolist()
-        cond_sel = st.multiselect("Filtrar por condição:", cond_unicas, default=cond_unicas)
-
-    df_filtrado = df_geral[df_geral["Modelo"].isin(mod_sel) & df_geral["Condição"].isin(cond_sel)].copy()
-    st.dataframe(
-        df_filtrado.style.format({
-            "F1 Macro": "{:.4f}",
-            "Accuracy": "{:.4f}",
-            "Tempo (s)": "{:.2f}",
-        }),
-        use_container_width=True,
-        hide_index=True,
-    )
-
-    # Diagnóstico do BERTimbau
-    df_erros_bert = carregar_erros_bert()
-    if df_erros_bert is not None:
-        st.markdown("---")
-        st.markdown("### Diagnóstico do BERTimbau: Impacto da Remoção de Emoticons")
+    # ------------------------------------------------------------
+    # ABA 1: RESULTADOS DEFINITIVOS DO ARTIGO / TCC II
+    # ------------------------------------------------------------
+    with tab_oficial:
         st.markdown(
             """
-            <div style="color: #A9A5BC; font-size: 0.94rem; margin-bottom: 14px; line-height: 1.55;">
-                O experimento evidenciou um comportamento crítico no BERTimbau:
-                ao remover os marcadores emocionais explícitos do texto original, a taxa de erro saltou de <b>0,3% para 15,7%</b>.
-                Esse salto revela que o desempenho quase perfeito em Texto Bruto (99,7%) estava atrelado à presença dos emoticons
-                utilizados na própria estratégia de consulta de coleta do corpus (<i>distant supervision</i> com <code>:)</code> e <code>:(</code>).
+            <div class="metric-card" style="border-left: 4px solid #8B5CF6; margin-bottom: 18px;">
+                <b style="color: #F5F3FF; font-size: 0.92rem;">Nota Metodológica sobre o Escopo Experimental Oficial:</b>
+                <div style="color: #A9A5BC; font-size: 0.9rem; line-height: 1.5; margin-top: 4px;">
+                    Os classificadores de Regressão Logística, SVM e a rede neural LSTM foram treinados com 79.281 exemplos e avaliados em 19.821 tweets de teste (divisão estratificada 80/20, SEED=42).
+                    O <b>BERTimbau</b> foi avaliado em uma partição estratificada de 5.000 exemplos de treino e 1.000 de teste devido à restrição computacional de memória GPU.
+                </div>
             </div>
             """,
             unsafe_allow_html=True,
         )
 
-        col_b1, col_b2 = st.columns([1.5, 1])
-        with col_b1:
-            fig_err = px.bar(
-                df_erros_bert,
-                x="Condição",
-                y="Taxa de erro",
-                color="Condição",
-                color_discrete_map=cores_condicoes,
-                title="Taxa de Erro do BERTimbau (Amostra de 1.000 Tweets)",
-                text=df_erros_bert["Taxa de erro"].apply(lambda t: f"{t*100:.1f}%"),
-            )
-            fig_err.update_layout(
-                height=320,
-                paper_bgcolor="#171426",
-                plot_bgcolor="#171426",
-                font=dict(color="#F5F3FF", size=13),
-                title=dict(font=dict(size=15, color="#F5F3FF")),
-                yaxis=dict(range=[0, 0.3], gridcolor="#2D2A42", tickfont=dict(color="#A9A5BC", size=12)),
-                xaxis=dict(tickfont=dict(color="#F5F3FF", size=13)),
-                showlegend=False,
-            )
-            st.plotly_chart(fig_err, use_container_width=True)
+        st.markdown("### Desempenho por Modelo e Condição (F1-Macro)")
 
-        with col_b2:
+        fig = px.bar(
+            df_geral,
+            x="Modelo",
+            y="F1 Macro",
+            color="Condição",
+            barmode="group",
+            color_discrete_map=cores_condicoes,
+            title="Desempenho Consolidado Oficial (F1-Score Macro)",
+            text=df_geral["F1 Macro"].apply(lambda v: f"{v:.4f}"),
+        )
+
+        fig.update_layout(
+            height=440,
+            paper_bgcolor="#171426",
+            plot_bgcolor="#171426",
+            font=dict(color="#F5F3FF", size=13),
+            title=dict(font=dict(size=16, color="#F5F3FF")),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(color="#A9A5BC", size=13),
+            ),
+            yaxis=dict(range=[0.7, 1.03], gridcolor="#2D2A42", tickfont=dict(color="#A9A5BC", size=12)),
+            xaxis=dict(gridcolor="#2D2A42", tickfont=dict(color="#F5F3FF", size=13)),
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.markdown("### Tabela Completa dos 16 Experimentos Oficiais")
+        col_filtro_mod, col_filtro_cond = st.columns(2)
+        with col_filtro_mod:
+            modelos_unicos = df_geral["Modelo"].unique().tolist()
+            mod_sel = st.multiselect("Filtrar por modelo:", modelos_unicos, default=modelos_unicos)
+        with col_filtro_cond:
+            cond_unicas = df_geral["Condição"].unique().tolist()
+            cond_sel = st.multiselect("Filtrar por condição:", cond_unicas, default=cond_unicas)
+
+        df_filtrado = df_geral[df_geral["Modelo"].isin(mod_sel) & df_geral["Condição"].isin(cond_sel)].copy()
+        st.dataframe(
+            df_filtrado.style.format({
+                "F1 Macro": "{:.4f}",
+                "Accuracy": "{:.4f}",
+                "Tempo (s)": "{:.2f}",
+            }),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+        # Diagnóstico de Erros do BERTimbau
+        df_erros_bert = carregar_erros_bert()
+        if df_erros_bert is not None:
+            st.markdown("---")
+            st.markdown("### Diagnóstico do BERTimbau: Impacto da Remoção de Emoticons")
+            st.markdown(
+                """
+                <div style="color: #A9A5BC; font-size: 0.94rem; margin-bottom: 14px; line-height: 1.55;">
+                    O experimento evidenciou um comportamento crítico no BERTimbau:
+                    ao remover os marcadores emocionais explícitos do texto original, a taxa de erro saltou de <b>0,3% para 15,7%</b>.
+                    Esse salto fornece indícios de dependência de marcadores associados à coleta do corpus (<i>distant supervision</i> com <code>:)</code> e <code>:(</code>),
+                    sustentando a hipótese de que a altíssima precisão observada em Texto Bruto (99,7%) estava associada a esse viés.
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            col_b1, col_b2 = st.columns([1.5, 1])
+            with col_b1:
+                fig_err = px.bar(
+                    df_erros_bert,
+                    x="Condição",
+                    y="Taxa de erro",
+                    color="Condição",
+                    color_discrete_map=cores_condicoes,
+                    title="Taxa de Erro do BERTimbau (Amostra de 1.000 Tweets)",
+                    text=df_erros_bert["Taxa de erro"].apply(lambda t: f"{t*100:.1f}%"),
+                )
+                fig_err.update_layout(
+                    height=320,
+                    paper_bgcolor="#171426",
+                    plot_bgcolor="#171426",
+                    font=dict(color="#F5F3FF", size=13),
+                    title=dict(font=dict(size=15, color="#F5F3FF")),
+                    yaxis=dict(range=[0, 0.3], gridcolor="#2D2A42", tickfont=dict(color="#A9A5BC", size=12)),
+                    xaxis=dict(tickfont=dict(color="#F5F3FF", size=13)),
+                    showlegend=False,
+                )
+                st.plotly_chart(fig_err, use_container_width=True)
+
+            with col_b2:
+                st.dataframe(
+                    df_erros_bert.style.format({"Taxa de erro": "{:.1%}"}),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+    # ------------------------------------------------------------
+    # ABA 2: TABELA DE VARIAÇÃO (DELTA F1) DO NOTEBOOK
+    # ------------------------------------------------------------
+    with tab_delta:
+        st.markdown(
+            """
+            <div style="color: #A9A5BC; font-size: 0.93rem; margin-bottom: 16px; line-height: 1.55;">
+                Esta tabela reproduz estritamente a <b>Tabela 3 do notebook de experimentos</b>,
+                calculando a diferença de F1-Macro de cada condição experimental em relação à linha de base (<b>Texto Bruto</b>):
+                $$\\Delta F1 = F1_{\\text{condição}} - F1_{\\text{Texto Bruto}}$$
+                Valores negativos indicam degradação do classificador ocasionada pelo pré-processamento.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        ordem_modelos = ['Regressão Logística', 'SVM', 'LSTM', 'BERTimbau']
+        ordem_condicoes = ['Texto Bruto', 'Limpeza Básica', 'Pipeline Completo', 'Sem Emoticons']
+
+        tabela_f1 = df_geral.pivot(
+            index='Condição',
+            columns='Modelo',
+            values='F1 Macro'
+        ).reindex(index=ordem_condicoes, columns=ordem_modelos)
+
+        delta_f1 = tabela_f1.subtract(tabela_f1.loc['Texto Bruto'], axis='columns')
+
+        st.markdown("#### Tabela Comparativa de Variação do F1-Score Macro")
+        st.dataframe(
+            delta_f1.style.format("{:+.4f}"),
+            use_container_width=True,
+        )
+
+        # Gráfico comparativo de variação
+        df_delta_melt = delta_f1.reset_index().melt(
+            id_vars="Condição",
+            var_name="Modelo",
+            value_name="Delta F1"
+        )
+        df_delta_melt = df_delta_melt[df_delta_melt["Condição"] != "Texto Bruto"]
+
+        fig_delta = px.bar(
+            df_delta_melt,
+            x="Modelo",
+            y="Delta F1",
+            color="Condição",
+            barmode="group",
+            color_discrete_map=cores_condicoes,
+            title="Impacto do Pré-processamento no F1-Macro (em Relação ao Texto Bruto)",
+            text=df_delta_melt["Delta F1"].apply(lambda v: f"{v:+.4f}"),
+        )
+        fig_delta.update_layout(
+            height=400,
+            paper_bgcolor="#171426",
+            plot_bgcolor="#171426",
+            font=dict(color="#F5F3FF", size=13),
+            title=dict(font=dict(size=16, color="#F5F3FF")),
+            yaxis=dict(gridcolor="#2D2A42", tickfont=dict(color="#A9A5BC", size=12)),
+            xaxis=dict(gridcolor="#2D2A42", tickfont=dict(color="#F5F3FF", size=13)),
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=1.02,
+                xanchor="right",
+                x=1,
+                font=dict(color="#A9A5BC", size=13),
+            ),
+        )
+        st.plotly_chart(fig_delta, use_container_width=True)
+
+        st.markdown(
+            """
+            <div class="metric-card" style="border-left: 4px solid #F59E0B; margin-top: 14px;">
+                <b style="color: #F5F3FF; font-size: 0.92rem;">Destaques da Tabela de Variação (Diferença Absoluta de F1-Macro):</b>
+                <div style="font-size: 0.88rem; color: #A9A5BC; line-height: 1.55; margin-top: 6px;">
+                    • <b>Pipeline Completo:</b> Provocou quedas severas em todas as famílias de algoritmos:
+                      <b>-0,0316</b> na Regressão Logística, <b>-0,0354</b> no SVM, <b>-0,0525</b> na LSTM e <b>-0,2524</b> no BERTimbau.<br>
+                    • <b>Sem Emoticons:</b> Teve variação residual nos modelos lineares com TF-IDF tradicional (-0,0007 e +0,0001) e moderada na LSTM (-0,0147),
+                      pois suas tokenizações descartam pontuações por padrão; já no BERTimbau, a perda foi expressiva (<b>-0,1560</b>), fornecendo indícios de dependência de marcadores associados à coleta do corpus.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    # ------------------------------------------------------------
+    # ABA 3: MODELOS DEMONSTRATIVOS DO PROTÓTIPO LOCAL
+    # ------------------------------------------------------------
+    with tab_local:
+        st.markdown(
+            """
+            <div style="color: #A9A5BC; font-size: 0.93rem; margin-bottom: 16px; line-height: 1.55;">
+                Esta aba apresenta as métricas obtidas no treinamento dos <b>modelos empacotados localmente</b> em <code>models/</code>
+                (arquivos <code>.joblib</code> utilizados para inferência em tempo real nas abas <i>Análise Individual</i> e <i>Comparar Condições</i>).
+                Foram treinados com o mesmo corpus <code>data/Train3Classes.csv</code> sob split estratificado 80/20.
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        df_local = carregar_metricas_locais()
+        if df_local is not None:
             st.dataframe(
-                df_erros_bert.style.format({"Taxa de erro": "{:.1%}"}),
+                df_local.style.format({
+                    "F1 Macro": "{:.4f}",
+                    "Accuracy": "{:.4f}",
+                    "Tempo (s)": "{:.2f}",
+                }),
                 use_container_width=True,
                 hide_index=True,
             )
+
+            st.caption(
+                "Nota de transparência metodológica: os artefatos locais espelham os pipelines tradicionais de Regressão Logística "
+                "e SVM do notebook original, permitindo demonstrações interativas rápidas sem necessidade de aceleradores gráficos GPU."
+            )
+        else:
+            st.info("Arquivo de métricas locais (`metricas_treinamento_local.csv`) não encontrado.")
 
 
 # ============================================================
@@ -1128,7 +1384,7 @@ def pagina_sobre_pesquisa():
         1. **Texto Bruto:** Texto original exatamente como publicado, mantendo pontuações, emoticons, hashtags e menções.
         2. **Limpeza Básica:** Remoção de URLs, menções `@usuario`, conversão para minúsculas, preservação do conteúdo textual de hashtags e redução de alongamentos (ex: *muitoooo* $\\rightarrow$ *muitoo*).
         3. **Pipeline Completo:** Limpeza básica somada à remoção de stopwords (com preservação de termos de negação como *não*, *nunca*, *jamais*) e redução ao radical via `RSLPStemmer`.
-        4. **Sem Emoticons:** Condição diagnóstica que extrai apenas os emoticons explícitos (`:)`, `:D`, `:(` etc.) via expressão regular para mensurar o impacto direto dos marcadores expressivos.
+        4. **Sem Emoticons:** Condição diagnóstica que remove os marcadores emocionais explícitos (`:)`, `:D`, `:(` etc.) via expressão regular para mensurar o impacto direto desses marcadores expressivos.
 
         ---
 
@@ -1141,15 +1397,21 @@ def pagina_sobre_pesquisa():
         ---
 
         ### 4. Principais Descobertas Científicas
-        - **Degradação pelo Pipeline Completo:** Em classificadores estatísticos (Regressão Logística e SVM), a aplicação do *Pipeline Completo* reduziu o F1-Score Macro em mais de 3 pontos percentuais (~0,83 $\\rightarrow$ ~0,80), demonstrando que a perda de desinências verbais e palavras estruturais afeta a interpretabilidade afetiva.
+        - **Degradação pelo Pipeline Completo:** Em classificadores estatísticos (Regressão Logística e SVM), a aplicação do *Pipeline Completo* reduziu o F1-Score Macro em mais de 0,03 em termos absolutos (~0,83 $\\rightarrow$ ~0,80), demonstrando que a perda de desinências verbais e palavras estruturais afeta a interpretabilidade afetiva.
         - **Viés de Coleta por Emoticons:** O corpus utilizado (`Train3Classes.csv`) possui associação entre a estratégia de coleta por consulta (`:)` e `:(`) e os rótulos de sentimento. Modelos de alta capacidade como o BERTimbau aprendem rapidamente a explorar esses marcadores quando presentes.
 
         ---
 
-        ### 5. Limitações Metodológicas do Protótipo
-        - **Protótipo Demonstrativo:** Esta aplicação é uma ferramenta acadêmica desenvolvida para fins de apresentação e demonstração científica, não devendo ser interpretada como um analisador universal de emoções.
-        - **Ironia e Sarcasmo:** Frases com duplo sentido ou ironia contextual permanecem desafiadoras para modelos de aprendizado supervisionado sem contexto discursivo amplo.
-        - **Especificidade do Corpus e Palavras Raras (OOV):** Modelos lineares com vocabulário fixo sofrem de cegueira a termos ausentes ou raros no treino (como adjetivos pejorativos pouco frequentes), recaindo sobre substantivos residuais neutros.
+        ### 5. Ressalva Metodológica sobre Emoticons e Tokenização (TF-IDF, LSTM e BERTimbau)
+        - **Filtros de Pontuação (TF-IDF e LSTM):** Tanto o extrator linear `TfidfVectorizer` (com regex alfanumérica padrão `(?u)\\b\\w\\w+\\b`) quanto o `Tokenizer` do Keras utilizado na rede LSTM (com os filtros de pontuação padrão) descartam símbolos de pontuação e caracteres não alfanuméricos isolados. Portanto, emoticons como `:)` e `:(` não se transformam em tokens diretos no vocabulário dessas abordagens. Variações de desempenho entre *Texto Bruto* e *Sem Emoticons* nesses modelos decorrem de ajustes contextuais e estocásticos no treinamento, e não da leitura literal desses símbolos.
+        - **Efeito no BERTimbau:** Em forte contraste, o transformer (**BERTimbau**), baseado em subpalavras (WordPiece), processa esses caracteres dentro de seu espaço representacional pré-treinado. Ao remover os marcadores explícitos, a taxa de erro saltou de **0,3% para 15,7%**, fornecendo indícios de dependência de marcadores associados à coleta por rótulos fracos (*distant supervision* baseada nas queries `:)` e `:(`).
+
+        ---
+
+        ### 6. Limitações Metodológicas e Rigor Acadêmico
+        - **Protótipo Demonstrativo vs. Artigo Científico:** A aplicação web apresenta os resultados oficiais definitivos do TCC II obtidos nos 16 experimentos do notebook, e mantém separadas as métricas dos modelos treinados localmente em `models/` para execução interativa.
+        - **Ironia e Contexto:** Frases com ambiguidade, ironia ou duplo sentido representam um limite intrínseco para classificadores supervisionados desacoplados de histórico discursivo ou contexto pragmático.
+        - **Vocabulário Fixo (OOV):** Modelos lineares não conseguem ponderar termos inexistentes no vocabulário de treino (adjetivos raros, neologismos da internet), recorrendo ao viés marginal das classes.
         """
     )
 

@@ -53,3 +53,49 @@ def test_inferencia_svm():
     res_svm_pos = classificar_texto("Estou muito feliz e contente!", "Texto Bruto", "SVM")
     assert res_svm_pos["sucesso"] is True
     assert res_svm_pos["classe_predita"] == "Positivo"
+
+
+def test_classificar_texto_vazio_apos_processamento():
+    # Texto composto apenas de emoticons na condição 'Sem Emoticons'
+    res_emoticon = classificar_texto(":-)", "Sem Emoticons", "Regressão Logística")
+    assert res_emoticon["sucesso"] is True
+    assert res_emoticon["texto_vazio"] is True
+    assert res_emoticon["classe_predita"] == "Indeterminado"
+    assert "vazio" in res_emoticon["diagnostico"]["aviso"].lower()
+
+    # Texto composto apenas de stopwords na condição 'Pipeline Completo'
+    res_stop = classificar_texto("de para com", "Pipeline Completo", "Regressão Logística")
+    assert res_stop["sucesso"] is True
+    assert res_stop["texto_vazio"] is True
+    assert res_stop["classe_predita"] == "Indeterminado"
+
+
+def test_diagnostico_tfidf_contribuicao_efetiva():
+    res = classificar_texto("Adorei o atendimento rápido", "Texto Bruto", "Regressão Logística")
+    assert res["sucesso"] is True
+    diagnostico = res["diagnostico"]
+    pesos = diagnostico.get("pesos_features", [])
+    assert len(pesos) > 0
+
+    primeiro_termo = pesos[0]
+    assert "token" in primeiro_termo
+    assert "tipo" in primeiro_termo
+    assert primeiro_termo["tipo"] in ["Unigrama", "Bigrama"]
+    assert "tfidf" in primeiro_termo
+    assert "coeficiente" in primeiro_termo
+    assert "contribuicao" in primeiro_termo
+    # Valida relação matemática: contribuicao ~= tfidf * coeficiente
+    assert abs(primeiro_termo["contribuicao"] - round(primeiro_termo["tfidf"] * primeiro_termo["coeficiente"], 4)) < 0.001
+
+
+def test_comparar_todas_as_condicoes_com_texto_vazio_parcial():
+    # Texto composto apenas de emoticons: na condição 'Sem Emoticons' fica vazio
+    res = comparar_todas_as_condicoes(":-)", "Regressão Logística")
+    assert res["total_condicoes"] == 4
+    # Pelo menos a condição 'Sem Emoticons' ficou vazia
+    condicoes_vazias = [r for r in res["resultados"] if r.get("texto_vazio")]
+    assert len(condicoes_vazias) >= 1
+    # Verifica que condicoes_validas exclui a vazia
+    assert "Sem Emoticons" not in res["condicoes_validas"]
+
+

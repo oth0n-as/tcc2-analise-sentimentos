@@ -1,0 +1,17 @@
+Modelo,Condição,F1 Macro,Accuracy,Tempo (s)
+Regressão Logística,Texto Bruto,0.834161,0.835276,8.494487
+Regressão Logística,Limpeza Básica,0.827825,0.828868,10.451163
+Regressão Logística,Pipeline Completo,0.802529,0.803643,8.218127
+Regressão Logística,Sem Emoticons,0.8335,0.8346,8.212199
+SVM,Texto Bruto,0.83007,0.830987,8.761392
+SVM,Limpeza Básica,0.82192,0.822865,6.59373
+SVM,Pipeline Completo,0.794715,0.796277,5.02465
+SVM,Sem Emoticons,0.8302,0.8311,15.378188
+LSTM,Texto Bruto,0.852825,0.853136,47.285781
+LSTM,Limpeza Básica,0.839565,0.840573,52.159281
+LSTM,Pipeline Completo,0.800311,0.801776,41.740577
+LSTM,Sem Emoticons,0.8381,0.8389,43.630226
+BERTimbau,Texto Bruto,0.997,0.997,88.301657
+BERTimbau,Limpeza Básica,0.8287,0.832,69.928351
+BERTimbau,Pipeline Completo,0.744599,0.748,64.489046
+BERTimbau,Sem Emoticons,0.841048,0.843,63.090482
